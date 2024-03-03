@@ -1,6 +1,7 @@
 import math
 
 from members import *
+from member_financials import *
 
 
 def get_account_fee(r):
@@ -108,8 +109,6 @@ def create_card_row_creator():
     return create_card_row
 
 
-print('loading balances')
-balances = read_excel(files_dir + '\\Reports\\Member financials.xlsx', 'Account Balances')
 print('loading/processing competitions')
 competitions = \
     read_excel(files_dir + '\\Competitions.xlsx').apply(
@@ -123,7 +122,7 @@ competitions = \
 print('processing accounts')
 extant_accounts = accounts[isnull(accounts['Cancelled'])]\
     .drop(columns=['Cancelled'])\
-    .join(balances.set_index('Membership ID'))\
+    .join(balances)\
     .apply(create_affordability_row, axis=1, result_type='expand')
 
 
