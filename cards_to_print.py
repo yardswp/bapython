@@ -6,7 +6,7 @@ from members import *
 from member_financials import *
 
 
-advance_months = 0
+advance_months = 1
 # This does not work as expected, as it will include anyone who could possibly be renewed
 # I think that I would rather that it only included people who had been members in the previous n months
 include_anticipatory = False
@@ -257,12 +257,12 @@ print('processing to-print accounts')
 to_print =\
     end_dates[~end_dates['Preprinted']]\
     .join(extant_accounts.drop(columns=['Membership Fee']))\
-    .join(members[['Email', 'Telephone', 'Full Name', 'Count']])
+    .join(members[['Email', 'Telephone', 'Full Name', 'Count']])\
+    .reset_index(names='Membership Number')
     
 print('processing lettered accounts')
 lettered =\
-    to_print[to_print['Count'] == 1]\
-    .reset_index()[
+    to_print[to_print['Count'] == 1][
         [
             'Addressee', 'Informal Greeting', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Post Code',
             'Country', 'Membership Number', 'Telephone', 'Email', 'Letter Date', 'Previous Issuance', 'Anticipatory'
@@ -299,7 +299,6 @@ print('processing cards')
 cards =\
     to_print\
     .join(properties['Address 1'], on='Property Code')\
-    .reset_index()\
     .sort_values(
         by=['Letter Date', 'Previous Issuance', 'Anticipatory', 'Membership Number', 'Count'])\
     .apply(
