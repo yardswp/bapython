@@ -277,6 +277,40 @@ cards_10up = cards_10up\
     .reset_index(names='n')
 cards_10up.insert(1, 'p', 'p')
 
+current_accounts = accounts\
+    .join(
+        concat(
+            [
+                current_members_accounts.reset_index(names='Membership Number'),
+                new_issuances[['Membership Number']]
+            ])\
+            .drop_duplicates()\
+            .sort_values(by='Membership Number').set_index('Membership Number'),
+        how='inner')
+zone_mapping = {
+    'Zone 3': 0,
+    'Zone 2': 1,
+    'Zone 1': 2,
+    'Europe': 3,
+    'UK': 4,
+    'Barbican': 5
+}
+zone_mapper = lambda z: zone_mapping[z]
+current_accounts['Zone Order'] = current_accounts['Post Zone'].map(zone_mapper)
+    
+offsite_accounts = current_accounts[current_accounts['Post Zone'] != 'Barbican']\
+    .reset_index(names='Membership Number')\
+    .sort_values(by=['Zone Order', 'Membership Number'])[
+        ['Addressee', 'Informal Greeting', 'Address Line 1', 'Address Line 2', 'City',
+         'County', 'Post Code', 'Country', 'Post Zone', 'Membership Number']]
+    
+post_zones = current_accounts\
+    .reset_index()\
+    .groupby('Post Zone').agg(**{'Count': ('Membership Number', 'count')})\
+    .reset_index()
+post_zones['Zone Order'] = post_zones['Post Zone'].map(zone_mapper)
+post_zones = post_zones.sort_values('Zone Order')[['Post Zone', 'Count']]
+
 if __name__ == '__main__':
     print(f'writing to Cards to Print {NOW.isoformat()}')
     with ExcelWriter('Cards to Print ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
@@ -286,3 +320,9 @@ if __name__ == '__main__':
         used_preprints.to_excel(writer, sheet_name='Preprints', index=False)
         cards.to_excel(writer, sheet_name='Single File Cards', index=False)
         cards_10up.to_excel(writer, sheet_name='Multi File Cards', index=False)
+    
+    print(f'writing to Addresses {NOW.isoformat()}')
+    with ExcelWriter('Addresses ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
+        offsite_accounts.to_excel(writer, sheet_name='Offsite Members', index=False)
+        post_zones.to_excel(writer, sheet_name='Post Zones', index=False)
+        
