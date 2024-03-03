@@ -115,6 +115,27 @@ def create_card_row_creator():
     return create_card_row
 
 
+def write_output_files():
+    write_mailchimp_members()
+    write_member_financials()
+    print(f'writing to Cards to Print {NOW.isoformat()}')
+    now_str = NOW.isoformat().replace(':', '-')
+    with ExcelWriter(f'Cards to Print {now_str}.xlsx') as writer:
+        new_letter_accounts.to_excel(writer, sheet_name='New Letter Accounts', index=False)
+        renewal_letter_accounts.to_excel(writer, sheet_name='Normal Letter Accounts', index=False)
+        new_issuances.to_excel(writer, sheet_name='New Issuances', index=False)
+        used_preprints.to_excel(writer, sheet_name='Preprints', index=False)
+    
+    print(f'writing to Addresses {NOW.isoformat()}')
+    with ExcelWriter(f'Addresses {now_str}.xlsx') as writer:
+        offsite_accounts.to_excel(writer, sheet_name='Offsite Members', index=False)
+        post_zones.to_excel(writer, sheet_name='Post Zones', index=False)
+    
+    print(f'writing card CSVs')
+    cards.to_csv(f'Cards {now_str}.csv', index=False)
+    cards_10up.to_csv(f'Cards_10up {now_str}.csv', index=False)
+
+
 print('loading/processing competitions')
 competitions = \
     read_excel(files_dir + '\\Competitions.xlsx').apply(
@@ -257,7 +278,7 @@ cards_10up = cards_10up\
             df.apply(
                 lambda r:
                     {
-                        k + str(r['c']): v 
+                        k + str(r['c'] + 1): v 
                         for (k, v)
                         in r.items()
                         if not k in ['an', 'n', 'c', 'p']},
@@ -312,17 +333,5 @@ post_zones['Zone Order'] = post_zones['Post Zone'].map(zone_mapper)
 post_zones = post_zones.sort_values('Zone Order')[['Post Zone', 'Count']]
 
 if __name__ == '__main__':
-    print(f'writing to Cards to Print {NOW.isoformat()}')
-    with ExcelWriter('Cards to Print ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
-        new_letter_accounts.to_excel(writer, sheet_name='New Letter Accounts', index=False)
-        renewal_letter_accounts.to_excel(writer, sheet_name='Normal Letter Accounts', index=False)
-        new_issuances.to_excel(writer, sheet_name='New Issuances', index=False)
-        used_preprints.to_excel(writer, sheet_name='Preprints', index=False)
-        cards.to_excel(writer, sheet_name='Single File Cards', index=False)
-        cards_10up.to_excel(writer, sheet_name='Multi File Cards', index=False)
-    
-    print(f'writing to Addresses {NOW.isoformat()}')
-    with ExcelWriter('Addresses ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
-        offsite_accounts.to_excel(writer, sheet_name='Offsite Members', index=False)
-        post_zones.to_excel(writer, sheet_name='Post Zones', index=False)
+    write_output_files()
         

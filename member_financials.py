@@ -17,6 +17,14 @@ def payments(file_name: str) -> DataFrame:
             in glob(dir_name + '\\' + file_name + '.xls?')
         ]
     )
+    
+    
+def write_member_financials():
+    NOW = Timestamp.today()
+    print(f'writing to Member Financials {NOW.isoformat()}')
+    with ExcelWriter('Member Financials ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
+        balances.to_excel(writer, sheet_name='Balances')
+        payment_history.to_excel(writer, sheet_name='Payment History')
 
 
 file_names = ['Card Issuances', 'Cheques', 'Gifts', 'PayPal', 'Statements']
@@ -31,8 +39,4 @@ balances = payment_history\
     .agg(**{'Balance': ('Amount', 'sum')})
 
 if __name__ == '__main__':
-    NOW = Timestamp.today()
-    print(f'writing to Member Financials {NOW.isoformat()}')
-    with ExcelWriter('Member Financials ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
-        balances.to_excel(writer, sheet_name='Balances')
-        payment_history.to_excel(writer, sheet_name='Payment History')
+    write_member_financials()

@@ -74,6 +74,14 @@ def create_informal_greeting(name_series):
     return name_series[0]
 
 
+def write_mailchimp_members():
+    print("processing MailChimp export")
+    email_members = current_members.join(members)[['Email', 'Informal Name', 'Full Name']].reset_index(names='Membership ID')
+
+    print("writing emailable members CSV")
+    email_members.to_csv('Current Email Details ' + NOW.isoformat().replace(':', '-') + '.csv', index=False)
+
+
 print("loading properties")
 properties =\
     read_excel(files_dir + '\\Properties.xlsx', 'Properties')\
@@ -234,9 +242,3 @@ accounts = all_members\
 
 print("processing current_members")
 current_members = accounts[accounts['Current Member'] == True].drop('Current Member', axis=1)
-
-print("processing MailChimp export")
-email_members = current_members.join(members)[['Email', 'Informal Name', 'Full Name']].reset_index(names='Membership ID')
-
-print("writing emailable members")
-email_members.to_csv('Current Email Details ' + NOW.isoformat().replace(':', '-') + '.csv', index=False)
