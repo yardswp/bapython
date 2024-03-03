@@ -2,6 +2,7 @@ import os
 from glob import glob
 from dotenv import find_dotenv, load_dotenv
 from pandas import DataFrame, ExcelWriter, Timestamp, concat, read_excel
+from utils import loadFromExcel
 
 
 load_dotenv(find_dotenv())
@@ -10,15 +11,9 @@ load_dotenv(find_dotenv())
 def payments(file_name: str) -> DataFrame:
     print(f'loading {file_name}')
     dir_name = os.getenv('BA_FILES_DIR', '')
-    return concat(
-        [
-            read_excel(full_name, 'Payments').set_index(['Membership ID', 'Date'])
-            for full_name
-            in glob(dir_name + '\\' + file_name + '.xls?')
-        ]
-    )
-    
-    
+    return loadFromExcel(file_name, 'Payments').set_index(['Membership ID', 'Date'])
+
+
 def write_member_financials():
     NOW = Timestamp.today()
     print(f'writing to Member Financials {NOW.isoformat()}')

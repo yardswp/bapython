@@ -1,12 +1,8 @@
-import os
 from re import search
 from typing import Any
-from pandas import Timestamp, concat, isna, offsets, read_excel
+from pandas import Timestamp, concat, isna, offsets
 from numpy import NaN
-from dotenv import find_dotenv, load_dotenv
-
-
-load_dotenv(find_dotenv())
+from utils import loadFromExcel
 
 
 NOW = Timestamp.today()
@@ -14,7 +10,6 @@ month_begin = Timestamp(day=NOW.day, month=NOW.month, year=NOW.year) - offsets.M
                 if NOW.day > 1\
                 else Timestamp(day=NOW.day, month=NOW.month, year=NOW.year)
 month_end = month_begin + offsets.MonthEnd()
-files_dir = os.getenv('BA_FILES_DIR', '')
 
 
 def trim_normalise_string(x: Any):
@@ -85,12 +80,12 @@ def write_mailchimp_members():
 
 print("loading properties")
 properties =\
-    read_excel(files_dir + '\\Properties.xlsx', 'Properties')\
+    loadFromExcel('Properties')\
     .set_index('Property Code')
 
 print("loading normal_members")
 normal_members =\
-    read_excel(files_dir + '\\Member Details.xlsm', 'Member')\
+    loadFromExcel('Member Details', 'Member')\
     .join(properties, on='Property Code')\
     .rename(columns={
         'Comment (YELLOW HIGHLIGHT = OLD COMMENT)': 'Comment',
@@ -135,7 +130,7 @@ normal_members = concat([
 
 
 print("loading associate_members")
-associate_members = read_excel(files_dir + '\\Member Details.xlsm', 'Associates')
+associate_members = loadFromExcel('Member Details', 'Associates')
 print("processing associate_members")
 associate_members[['Associate', 'Post Zone', 'Offsite', 'Country']] = [True, 'UK', True, 'United Kingdom']
 associate_members = associate_members.rename(columns={
@@ -205,7 +200,7 @@ members = concat(
 
 print("loading issuance")
 issuance =\
-    read_excel(files_dir + "\\Card Issuances.xlsx", "Card Issuance")
+    loadFromExcel('Card Issuances', 'Card Issuance')
 print("processing issuance")
 current_members_accounts = \
     issuance[issuance['Card End Date'] >= month_begin][['Membership ID']]\

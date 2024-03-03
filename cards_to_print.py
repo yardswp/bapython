@@ -1,12 +1,11 @@
+import locale
 import math
-from typing import Any, Callable, Dict
+from typing import Callable, Dict
 
 from pandas import Series, isnull, notna
 
-from members import *
 from member_financials import *
-import locale
-
+from members import *
 
 advance_months = 2
 # This does not work as expected, as it will include anyone who could possibly be renewed
@@ -16,6 +15,7 @@ include_anticipatory = False
 now_str = NOW.isoformat().replace(':', '-')
 
 locale.setlocale(locale.LC_ALL, '')
+
 
 def get_account_fee(r):
     if r['Associate']:
@@ -129,11 +129,16 @@ zone_mapping: Dict[str, int] = {
     'UK': 4,
     'Barbican': 5
 }
+
+
 def zone_mapper(zone: str | Series) -> int:
     if isinstance(zone, Series):
         return zone_mapper(zone.iloc[0])
     else:
-        return zone_mapping[str(zone)]
+        zone_str = str(zone)
+        if zone_str not in zone_mapping:
+            raise ValueError(f'No such zone {zone_str}')
+        return zone_mapping[zone_str]
 
 
 write_output_files = __name__ == '__main__'
@@ -141,7 +146,7 @@ write_output_files = __name__ == '__main__'
 
 print('loading/processing competitions')
 competitions = \
-    read_excel(files_dir + '\\Competitions.xlsx').apply(
+    loadFromExcel('Competitions', 'Junior Photography Competition').apply(
         lambda r: [
             r['Year'] + 1,
             'This year''s picture is by ' + r['Winner'] + ', winner of the ' + str(r['Year'] + 1) +
@@ -157,7 +162,7 @@ extant_accounts = accounts[isnull(accounts['Cancelled'])]\
 
 
 print('loading force_reprints')
-force_reprints = read_excel(files_dir + '\\Force Reprints.xlsx')
+force_reprints = loadFromExcel('Force Reprints', 'Forced Reprints')
 print('processing force_reprints')
 force_reprints['Reset Issuance'] = notna(force_reprints['Reset Issuance']) & force_reprints['Reset Issuance']
 force_reprints =\
@@ -187,7 +192,7 @@ card_renewal_dates =\
     })
 
 print('loading preprints')
-preprints = read_excel(files_dir + '\\' + 'Preprints.xlsx')\
+preprints = loadFromExcel('Preprints')\
     .drop(columns=['Card End Date', 'Addressee', 'Informal addressee', 'Address Line 1', 'Done'])
 preprints['Preprinted'] = True
 
@@ -238,7 +243,7 @@ if len(end_dates) != 0:
         end_dates\
         .reset_index()[
             ['Membership Number', 'Processing Date', 'Card Issuance', 'Renewal Date', 'Card End Date', 'Membership Fee',
-            'Anticipatory']
+                'Anticipatory']
         ]
 
     print('processing to-print accounts')
@@ -247,7 +252,7 @@ if len(end_dates) != 0:
         .join(extant_accounts.drop(columns=['Membership Fee']))\
         .join(members[['Email', 'Telephone', 'Full Name', 'Count']])\
         .reset_index(names='Membership Number')
-        
+
     print('processing lettered accounts')
     lettered =\
         to_print[to_print['Count'] == 1][
@@ -262,26 +267,25 @@ if len(end_dates) != 0:
         lettered[~lettered['Previous Issuance']]\
         .drop(columns=['Letter Date', 'Previous Issuance', 'Anticipatory'])
 
-
     print('processing renewal_letter_accounts')
     renewal_letter_accounts =\
         lettered[lettered['Previous Issuance']]\
         .drop(columns='Previous Issuance')
-        
+
     letter_post_zones =\
         new_issuances\
-            .set_index('Membership Number')\
-            .join(extant_accounts.drop(columns='Membership Fee'))\
-            .reset_index()[
-                ['Post Zone']
-            ]\
-            .groupby('Post Zone')\
-            .agg(**{
-                'Count':('Post Zone', 'count'),
-                'Zone Order': ('Post Zone', zone_mapper)})\
-            .sort_values('Zone Order')[
-                ['Count']
-            ]
+        .set_index('Membership Number')\
+        .join(extant_accounts.drop(columns='Membership Fee'))\
+        .reset_index()[
+            ['Post Zone']
+        ]\
+        .groupby('Post Zone')\
+        .agg(**{
+            'Count': ('Post Zone', 'count'),
+            'Zone Order': ('Post Zone', zone_mapper)})\
+        .sort_values('Zone Order')[
+            ['Count']
+        ]
 
     print('processing cards')
     cards =\
@@ -293,7 +297,7 @@ if len(end_dates) != 0:
             create_card_row_creator(),
             axis=1,
             result_type='expand')
-        
+
     print('processing 10-up cards')
     cards_10up = cards.copy(deep=False)
     cards_10up[['n','c']] = [("{:04.0f}".format(math.floor(i/10)), i%10) for i in range(len(cards_10up))]
@@ -304,7 +308,7 @@ if len(end_dates) != 0:
                 df.apply(
                     lambda r:
                         {
-                            k + "{:0.0f}".format(r['c'] + 1): v 
+                            k + "{:0.0f}".format(r['c'] + 1): v
                             for (k, v)
                             in r.items()
                             if not k in ['an', 'n', 'c', 'p']},
@@ -323,7 +327,7 @@ if len(end_dates) != 0:
                     or [NaN])[0])\
         .reset_index(names='n')
     cards_10up.insert(1, 'p', 'p')
-    
+
     if write_output_files:
         print(f'writing to Cards to Print {NOW.isoformat()}')
         with ExcelWriter(f'Cards to Print {now_str}.xlsx') as writer:
@@ -332,21 +336,22 @@ if len(end_dates) != 0:
             new_issuances.to_excel(writer, sheet_name='New Issuances', index=False)
             used_preprints.to_excel(writer, sheet_name='Preprints', index=False)
             letter_post_zones.to_excel(writer, sheet_name='Post Zones')
-        
+
         print(f'writing card CSVs')
         cards.to_csv(f'Cards {now_str}.csv', index=False)
         cards_10up.to_csv(f'Cards_10up {now_str}.csv', index=False)
 
-current_accounts = accounts\
-    .join(current_members_accounts, how='inner')
+current_accounts = accounts[
+        isnull(accounts['Cancelled'])
+    ].join(current_members_accounts, how='inner')
 current_accounts['Zone Order'] = current_accounts['Post Zone'].map(zone_mapper)
-    
+
 offsite_accounts = current_accounts[current_accounts['Post Zone'] != 'Barbican']\
     .reset_index(names='Membership Number')\
     .sort_values(by=['Zone Order', 'Membership Number'])[
         ['Addressee', 'Informal Greeting', 'Address Line 1', 'Address Line 2', 'City',
          'County', 'Post Code', 'Country', 'Post Zone', 'Membership Number']]
-    
+
 post_zones = current_accounts\
     .reset_index()\
     .groupby('Post Zone').agg(**{
@@ -393,11 +398,11 @@ current_member_details =\
 if write_output_files:
     write_mailchimp_members()
     write_member_financials()
-    
+
     print(f'writing to Addresses {NOW.isoformat()}')
     with ExcelWriter(f'Addresses {now_str}.xlsx') as writer:
         offsite_accounts.to_excel(writer, sheet_name='Offsite Members', index=False)
         post_zones.to_excel(writer, sheet_name='Post Zones', index=False)
-    
+
     print(f'Writing to all members list: current_members-{now_str}.csv')
-    current_member_details.to_csv(f'current_members-{now_str}.csv', index=False)   
+    current_member_details.to_csv(f'current_members-{now_str}.csv', index=False)
