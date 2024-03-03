@@ -9,6 +9,10 @@ load_dotenv(find_dotenv())
 
 
 NOW = Timestamp.today()
+month_begin = Timestamp(day=NOW.day, month=NOW.month, year=NOW.year) - offsets.MonthBegin()\
+                if NOW.day > 1\
+                else Timestamp(day=NOW.day, month=NOW.month, year=NOW.year)
+month_end = month_begin + offsets.MonthEnd()
 files_dir = os.getenv('BA_FILES_DIR')
 
 
@@ -195,7 +199,7 @@ issuance =\
     read_excel(files_dir + "\\Card Issuances.xlsx", "Card Issuance")
 print("processing issuance")
 current_members_accounts = \
-    issuance[issuance['Card End Date'] >= NOW][['Membership ID']]\
+    issuance[issuance['Card End Date'] >= month_begin][['Membership ID']]\
     .set_index('Membership ID')
 
 

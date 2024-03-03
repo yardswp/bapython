@@ -1,8 +1,15 @@
 import math
+import sys
+from typing import Callable
 
 from members import *
 from member_financials import *
 
+
+advance_months = 0
+# This does not work as expected, as it will include anyone who could possibly be renewed
+# I think that I would rather that it only included people who had been members in the previous n months
+include_anticipatory = False
 
 def get_account_fee(r):
     if r['Associate']:
@@ -30,38 +37,37 @@ def create_affordability_row(r):
     }
 
 
-def create_reprint_row(r):
-    if r['Reset Issuance']:
-        card_renewal_date = NOW + offsets.MonthBegin() * 12
-        return {
-            'Processing Date': NOW,
-            'Card Issuance': NOW,
-            'Renewal Date': card_renewal_date,
-            'Card End Date': card_renewal_date + offsets.MonthEnd(),
-            'Membership Fee': 0,
-            'Issuance Count': r['Issuance Count'],
-            'Anticipatory': False
-        }
-    else:
-        return {
-            'Processing Date': NOW,
-            'Card Issuance': r['Card Issuance.Card Issuance'],
-            'Renewal Date': r['Card Issuance.Renewal Date'],
-            'Card End Date': r['Card Issuance.Card End Date'],
-            'Membership Fee': 0,
-            'Issuance Count': r['Issuance Count'],
-            'Anticipatory': False
-        }
+def create_reprint_row_creator() -> Callable[[object], object]:
+    card_renewal_date = month_begin + offsets.MonthBegin() * 12
+    card_end_date = card_renewal_date + offsets.MonthEnd()
+    return lambda r: {
+        'Processing Date': NOW,
+        'Card Issuance': month_begin,
+        'Renewal Date': card_renewal_date,
+        'Card End Date': card_end_date,
+        'Membership Fee': 0,
+        'Issuance Count': r['Issuance Count'],
+        'Anticipatory': False
+    } if r['Reset Issuance'] else {
+        'Processing Date': NOW,
+        'Card Issuance': r['Card Issuance.Card Issuance'],
+        'Renewal Date': r['Card Issuance.Renewal Date'],
+        'Card End Date': r['Card Issuance.Card End Date'],
+        'Membership Fee': 0,
+        'Issuance Count': r['Issuance Count'],
+        'Anticipatory': False
+    }
 
 
 def create_issuance(r):
-    card_issuance = NOW if isnull(r['Renewal Date']) or r['Renewal Date'] < NOW else r['Renewal Date']
+    card_issuance = month_begin if isnull(r['Renewal Date']) or r['Renewal Date'] < NOW else r['Renewal Date']
     renewal_date = card_issuance + offsets.MonthBegin() * 12
+    end_date = renewal_date + offsets.MonthEnd()
     return {
         'Processing Date': NOW,
         'Card Issuance': card_issuance,
         'Renewal Date': renewal_date,
-        'Card End Date': renewal_date + offsets.MonthEnd(),
+        'Card End Date': end_date,
         'Membership Fee': r['Membership Fee'],
         'Issuance Count': r['Issuance Count'],
         'Anticipatory': not r['Can Afford']
@@ -88,13 +94,13 @@ def create_card_row_creator():
 
     def create_card_row(r):
         nonlocal filename_count
-        filename_count = filename_count + 1
+        filename_count += 1
         filename = f'Card_{filename_count:0=4}'
         year = r['Card End Date'].year - (2 if r['Card End Date'].month < 4 else 1)
         return {
             'p': 'p',
             'n': filename,
-            'mn': r['index'],
+            'mn': r['Membership Number'],
             'ad': r['Address 1'],
             'nm': r['Full Name'],
             'd': timestamp_to_long_date_with_ordinal(r['Card End Date']),
@@ -142,7 +148,7 @@ force_reprints =\
         }),
         how='inner'
     ).apply(
-        create_reprint_row,
+        create_reprint_row_creator(),
         axis=1,
         result_type='expand'
     )
@@ -156,40 +162,55 @@ card_renewal_dates =\
         'Issuance Count': ('Renewal Date', 'count'),
     })
 
+print('loading preprints')
+preprints = read_excel(files_dir + '\\' + 'Preprints.xlsx')\
+    .drop(columns=['Card End Date', 'Addressee', 'Informal addressee', 'Address Line 1', 'Done'])
+preprints['Preprinted'] = True
+
 print('processing end_dates')
 end_dates = extant_accounts[['Membership Fee', 'Can Afford']].join(card_renewal_dates)
-end_dates = end_dates[
-        (
-                (
-                        end_dates['Renewal Date'].isna() |
-                        (NOW >= end_dates['Renewal Date'])
-                ) &
-                end_dates['Can Afford']
-        ) |
-        (
-                (NOW <= end_dates['Renewal Date']) &
-                (end_dates['Renewal Date'] < NOW + offsets.MonthEnd() * 13)
-        )]\
+print('\tfiltering out accounts that aren\'t ready to renew, and creating issuances for the remaining')
+end_date_filter = end_dates['Renewal Date'].isna() | (NOW >= end_dates['Renewal Date'])
+if advance_months > 0:
+    end_date_filter = end_date_filter | (NOW <= end_dates['Renewal Date']) & (end_dates['Renewal Date'] < month_end + offsets.MonthEnd() * advance_months)
+if not include_anticipatory:
+    end_date_filter = end_date_filter & end_dates['Can Afford']
+end_dates = end_dates[end_date_filter]\
     .apply(create_issuance, axis=1, result_type='expand')
+print('\tadding forced reprints, letter dates and previous issuance')
 end_dates = concat([end_dates, force_reprints])\
     .apply(
         lambda r: {
             **r,
-            'Letter Date': r['Card Issuance'] if r['Card Issuance'] > NOW else NOW,
+            'Letter Date': r['Card Issuance'] if r['Card Issuance'] > month_begin else month_begin,
             'Previous Issuance': r['Issuance Count'] > 0
         },
         axis=1,
-        result_type='expand'
-    )
+        result_type='expand')\
+    .reset_index(names='Membership Number')\
+    .set_index(['Membership Number', 'Letter Date'])\
+    .join(preprints.set_index(['Membership Number', 'Letter Date']))\
+    .reset_index()\
+    .sort_values(by=['Letter Date', 'Previous Issuance', 'Anticipatory', 'Membership Number'])\
+    .set_index('Membership Number')
+end_dates['Preprinted'].replace(NaN, False, inplace=True)
+
+used_preprints = preprints\
+    .set_index(['Membership Number', 'Letter Date'])\
+    .join(
+        end_dates
+            .reset_index()[['Membership Number', 'Letter Date']]
+            .set_index(['Membership Number', 'Letter Date']),
+        how='inner')\
+    .reset_index()
+
+end_dates = end_dates[~end_dates['Preprinted']]
 
 print('processing new_issuances')
 new_issuances =\
     end_dates\
-    .reset_index(names='Membership ID')\
-    .sort_values(
-        by=['Anticipatory', 'Letter Date', 'Membership ID']
-    )[
-        ['Membership ID', 'Processing Date', 'Card Issuance', 'Renewal Date', 'Card End Date', 'Membership Fee',
+    .reset_index()[
+        ['Membership Number', 'Processing Date', 'Card Issuance', 'Renewal Date', 'Card End Date', 'Membership Fee',
          'Anticipatory']
     ]
 
@@ -198,24 +219,21 @@ commencing_accounts =\
     end_dates\
     .join(extant_accounts.drop(columns=['Membership Fee']))\
     .join(members[members['Count'] == 1][['Email', 'Telephone']])\
-    .reset_index(names='Membership Number')\
-    .sort_values(
-        by=['Letter Date', 'Anticipatory', 'Membership Number']
-    )[
+    .reset_index()[
         [
             'Addressee', 'Informal Greeting', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Post Code',
             'Country', 'Membership Number', 'Telephone', 'Email', 'Letter Date', 'Previous Issuance', 'Anticipatory'
         ]
     ]
 
+print('processing new_letter_accounts')
+new_letter_accounts = commencing_accounts[~commencing_accounts['Previous Issuance']]\
+    .drop(columns=['Letter Date', 'Previous Issuance', 'Anticipatory'])
+
 
 print('processing renewal_letter_accounts')
 renewal_letter_accounts = commencing_accounts[commencing_accounts['Previous Issuance']]\
     .drop(columns='Previous Issuance')
-
-print('processing new_letter_accounts')
-new_letter_accounts = commencing_accounts[~commencing_accounts['Previous Issuance']]\
-    .drop(columns=['Letter Date', 'Previous Issuance', 'Anticipatory'])
 
 print('processing cards')
 cards = end_dates.join(extant_accounts.drop(columns=['Membership Fee']))\
@@ -223,17 +241,48 @@ cards = end_dates.join(extant_accounts.drop(columns=['Membership Fee']))\
     .join(members[['Full Name', 'Count']])\
     .reset_index()\
     .sort_values(
-        by=['Previous Issuance', 'Anticipatory', 'Letter Date', 'index', 'Count'], kind='stable'
-    )\
+        by=['Letter Date', 'Previous Issuance', 'Anticipatory', 'Membership Number', 'Count'])\
     .apply(
-    create_card_row_creator(),
-    axis=1,
-    result_type='expand'
-)
+        create_card_row_creator(),
+        axis=1,
+        result_type='expand')
+    
+cards_10up = cards.copy(deep=False)
+cards_10up[['n','c']] = [(int(i/10), int(i%10)) for i in range(len(cards_10up))]
+print('processing 10-up cards')
+cards_10up = cards_10up\
+    .groupby('n')\
+    .apply(
+        lambda df:
+            df.apply(
+                lambda r:
+                    {
+                        k + str(r['c']): v 
+                        for (k, v)
+                        in r.items()
+                        if not k in ['an', 'n', 'c', 'p']},
+                axis=1,
+                result_type='expand'))\
+    .groupby('n')\
+    .agg(
+        lambda s:
+            (
+                [
+                    (int(v) if isinstance(v, float) else v)
+                    for v
+                    in s
+                    if not isinstance(v, float)
+                        or not math.isnan(v)][:1]
+                or [NaN])[0])\
+    .reset_index(names='n')
+cards_10up.insert(1, 'p', 'p')
 
-print(f'writing to Cards to Print {NOW.isoformat()}')
-with ExcelWriter('Cards to Print ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
-    new_letter_accounts.to_excel(writer, sheet_name='New Letter Accounts', index=False)
-    renewal_letter_accounts.to_excel(writer, sheet_name='Normal Letter Accounts', index=False)
-    new_issuances.to_excel(writer, sheet_name='New Issuances', index=False)
-    cards.to_excel(writer, sheet_name='Cards', index=False)
+if __name__ == '__main__':
+    print(f'writing to Cards to Print {NOW.isoformat()}')
+    with ExcelWriter('Cards to Print ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
+        new_letter_accounts.to_excel(writer, sheet_name='New Letter Accounts', index=False)
+        renewal_letter_accounts.to_excel(writer, sheet_name='Normal Letter Accounts', index=False)
+        new_issuances.to_excel(writer, sheet_name='New Issuances', index=False)
+        used_preprints.to_excel(writer, sheet_name='Preprints', index=False)
+        cards.to_excel(writer, sheet_name='Single File Cards', index=False)
+        cards_10up.to_excel(writer, sheet_name='Multi File Cards', index=False)

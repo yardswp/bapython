@@ -3,3 +3,5 @@ numpy
 python-dotenv
 openpyxl
 bottleneck
+numexpr
+numba
