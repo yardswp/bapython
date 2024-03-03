@@ -1,6 +1,6 @@
 import math
 import sys
-from typing import Callable
+from typing import Callable, Dict
 
 from members import *
 from member_financials import *
@@ -125,6 +125,7 @@ def write_output_files():
         renewal_letter_accounts.to_excel(writer, sheet_name='Normal Letter Accounts', index=False)
         new_issuances.to_excel(writer, sheet_name='New Issuances', index=False)
         used_preprints.to_excel(writer, sheet_name='Preprints', index=False)
+        letter_post_zones.to_excel(writer, sheet_name='Post Zones')
     
     print(f'writing to Addresses {NOW.isoformat()}')
     with ExcelWriter(f'Addresses {now_str}.xlsx') as writer:
@@ -134,6 +135,21 @@ def write_output_files():
     print(f'writing card CSVs')
     cards.to_csv(f'Cards {now_str}.csv', index=False)
     cards_10up.to_csv(f'Cards_10up {now_str}.csv', index=False)
+
+
+zone_mapping: Dict[str, int] = {
+    'Zone 3': 0,
+    'Zone 2': 1,
+    'Zone 1': 2,
+    'Europe': 3,
+    'UK': 4,
+    'Barbican': 5
+}
+def zone_mapper(zone: str | Series) -> int:
+    if isinstance(zone, Series):
+        return zone_mapper(zone.iloc[0])
+    else:
+        return zone_mapping[str(zone)]
 
 
 print('loading/processing competitions')
@@ -216,16 +232,18 @@ end_dates = concat([end_dates, force_reprints])\
     .set_index('Membership Number')
 end_dates['Preprinted'].replace(NaN, False, inplace=True)
 
-used_preprints = preprints\
-    .set_index(['Membership Number', 'Letter Date'])\
+used_preprints =\
+    preprints.\
+    set_index(['Membership Number', 'Letter Date'])\
     .join(
         end_dates
             .reset_index()[['Membership Number', 'Letter Date']]
             .set_index(['Membership Number', 'Letter Date']),
         how='inner')\
+    .reset_index()\
+    .set_index('Membership Number')\
+    .join(extant_accounts[['Addressee', 'Address Line 1']])\
     .reset_index()
-
-end_dates = end_dates[~end_dates['Preprinted']]
 
 print('processing new_issuances')
 new_issuances =\
@@ -235,11 +253,15 @@ new_issuances =\
          'Anticipatory']
     ]
 
-print('processing commencing_accounts')
-commencing_accounts =\
-    end_dates\
+print('processing to-print accounts')
+to_print =\
+    end_dates[~end_dates['Preprinted']]\
     .join(extant_accounts.drop(columns=['Membership Fee']))\
-    .join(members[members['Count'] == 1][['Email', 'Telephone']])\
+    .join(members[['Email', 'Telephone', 'Full Name', 'Count']])
+    
+print('processing lettered accounts')
+lettered =\
+    to_print[to_print['Count'] == 1]\
     .reset_index()[
         [
             'Addressee', 'Informal Greeting', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Post Code',
@@ -248,18 +270,35 @@ commencing_accounts =\
     ]
 
 print('processing new_letter_accounts')
-new_letter_accounts = commencing_accounts[~commencing_accounts['Previous Issuance']]\
+new_letter_accounts =\
+    lettered[~lettered['Previous Issuance']]\
     .drop(columns=['Letter Date', 'Previous Issuance', 'Anticipatory'])
 
 
 print('processing renewal_letter_accounts')
-renewal_letter_accounts = commencing_accounts[commencing_accounts['Previous Issuance']]\
+renewal_letter_accounts =\
+    lettered[lettered['Previous Issuance']]\
     .drop(columns='Previous Issuance')
+    
+letter_post_zones =\
+    new_issuances\
+        .set_index('Membership Number')\
+        .join(extant_accounts.drop(columns='Membership Fee'))\
+        .reset_index()[
+            ['Post Zone']
+        ]\
+        .groupby('Post Zone')\
+        .agg(**{
+            'Count':('Post Zone', 'count'),
+            'Zone Order': ('Post Zone', zone_mapper)})\
+        .sort_values('Zone Order')[
+            ['Count']
+        ]
 
 print('processing cards')
-cards = end_dates.join(extant_accounts.drop(columns=['Membership Fee']))\
+cards =\
+    to_print\
     .join(properties['Address 1'], on='Property Code')\
-    .join(members[['Full Name', 'Count']])\
     .reset_index()\
     .sort_values(
         by=['Letter Date', 'Previous Issuance', 'Anticipatory', 'Membership Number', 'Count'])\
@@ -268,9 +307,9 @@ cards = end_dates.join(extant_accounts.drop(columns=['Membership Fee']))\
         axis=1,
         result_type='expand')
     
-cards_10up = cards.copy(deep=False)
-cards_10up[['n','c']] = [(int(i/10), int(i%10)) for i in range(len(cards_10up))]
 print('processing 10-up cards')
+cards_10up = cards.copy(deep=False)
+cards_10up[['n','c']] = [("{:04.0f}".format(math.floor(i/10)), i%10) for i in range(len(cards_10up))]
 cards_10up = cards_10up\
     .groupby('n')\
     .apply(
@@ -278,7 +317,7 @@ cards_10up = cards_10up\
             df.apply(
                 lambda r:
                     {
-                        k + str(r['c'] + 1): v 
+                        k + "{:0.0f}".format(r['c'] + 1): v 
                         for (k, v)
                         in r.items()
                         if not k in ['an', 'n', 'c', 'p']},
@@ -289,7 +328,7 @@ cards_10up = cards_10up\
         lambda s:
             (
                 [
-                    (int(v) if isinstance(v, float) else v)
+                    ("{:0.0f}".format(v) if isinstance(v, float) else v)
                     for v
                     in s
                     if not isinstance(v, float)
@@ -308,15 +347,6 @@ current_accounts = accounts\
             .drop_duplicates()\
             .sort_values(by='Membership Number').set_index('Membership Number'),
         how='inner')
-zone_mapping = {
-    'Zone 3': 0,
-    'Zone 2': 1,
-    'Zone 1': 2,
-    'Europe': 3,
-    'UK': 4,
-    'Barbican': 5
-}
-zone_mapper = lambda z: zone_mapping[z]
 current_accounts['Zone Order'] = current_accounts['Post Zone'].map(zone_mapper)
     
 offsite_accounts = current_accounts[current_accounts['Post Zone'] != 'Barbican']\
@@ -327,10 +357,11 @@ offsite_accounts = current_accounts[current_accounts['Post Zone'] != 'Barbican']
     
 post_zones = current_accounts\
     .reset_index()\
-    .groupby('Post Zone').agg(**{'Count': ('Membership Number', 'count')})\
-    .reset_index()
-post_zones['Zone Order'] = post_zones['Post Zone'].map(zone_mapper)
-post_zones = post_zones.sort_values('Zone Order')[['Post Zone', 'Count']]
+    .groupby('Post Zone').agg(**{
+        'Count':('Post Zone', 'count'),
+        'Zone Order': ('Post Zone', zone_mapper)})\
+    .reset_index()\
+    .sort_values('Zone Order')[['Post Zone', 'Count']]
 
 if __name__ == '__main__':
     write_output_files()
