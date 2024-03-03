@@ -226,3 +226,9 @@ accounts = all_members\
 
 print("processing current_members")
 current_members = accounts[accounts['Current Member'] == True].drop('Current Member', axis=1)
+
+print("processing MailChimp export")
+email_members = current_members.join(members)[['Email', 'Informal Name', 'Full Name']].reset_index(names='Membership ID')
+
+print("writing emailable members")
+email_members.to_csv('Current Email Details ' + NOW.isoformat().replace(':', '-') + '.csv', index=False)
