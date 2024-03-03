@@ -6,6 +6,7 @@ from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
+
 def payments(file_name: str) -> DataFrame:
     print(f'loading {file_name}')
     dir_name = os.getenv('BA_FILES_DIR')
@@ -28,3 +29,10 @@ balances = payment_history\
     .reset_index(names=['Membership ID', 'Date'])\
     .groupby('Membership ID')\
     .agg(**{'Balance': ('Amount', 'sum')})
+
+if __name__ == '__main__':
+    NOW = Timestamp.today()
+    print(f'writing to Member Financials {NOW.isoformat()}')
+    with ExcelWriter('Member Financials ' + NOW.isoformat().replace(':', '-') + '.xlsx') as writer:
+        balances.to_excel(writer, sheet_name='Balances')
+        payment_history.to_excel(writer, sheet_name='Payment History')
