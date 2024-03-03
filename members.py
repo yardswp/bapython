@@ -1,10 +1,15 @@
+import os
 from re import search
-
 from pandas import *
 from numpy import NaN
+from dotenv import find_dotenv, load_dotenv
+
+
+load_dotenv(find_dotenv())
 
 
 NOW = Timestamp.today()
+files_dir = os.getenv('BA_FILES_DIR')
 
 
 def trim_normalise_string(x: any):
@@ -65,7 +70,6 @@ def create_informal_greeting(name_series):
     return name_series[0]
 
 
-files_dir = 'C:\\Users\\jimda\\OneDrive\\BA Membership Files'
 print("loading properties")
 properties =\
     read_excel(files_dir + '\\Properties.xlsx', 'Properties')\

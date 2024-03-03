@@ -1,11 +1,14 @@
+import os
 from glob import glob
-
 from pandas import *
+from dotenv import find_dotenv, load_dotenv
 
+
+load_dotenv(find_dotenv())
 
 def payments(file_name: str) -> DataFrame:
     print(f'loading {file_name}')
-    dir_name = 'C:\\Users\\jimda\\OneDrive\\BA Membership Files'
+    dir_name = os.getenv('BA_FILES_DIR')
     return concat(
         [
             read_excel(full_name, 'Payments').set_index(['Membership ID', 'Date'])
