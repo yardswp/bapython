@@ -5,12 +5,15 @@ from pandas import Series, isnull, notna
 
 from members import *
 from member_financials import *
+import locale
 
 
-advance_months = 1
+advance_months = 2
 # This does not work as expected, as it will include anyone who could possibly be renewed
 # I think that I would rather that it only included people who had been members in the previous n months
 include_anticipatory = False
+
+locale.setlocale(locale.LC_ALL, '')
 
 def get_account_fee(r):
     if r['Associate']:
@@ -136,6 +139,8 @@ def write_output_files():
     print(f'writing card CSVs')
     cards.to_csv(f'Cards {now_str}.csv', index=False)
     cards_10up.to_csv(f'Cards_10up {now_str}.csv', index=False)
+    print(f'Writing to all members list: current_members-{now_str}.csv')
+    current_member_details.to_csv(f'current_members-{now_str}.csv', index=False)
 
 
 zone_mapping: Dict[str, int] = {
@@ -362,6 +367,42 @@ post_zones = current_accounts\
         'Zone Order': ('Post Zone', zone_mapper)})\
     .reset_index()\
     .sort_values('Zone Order')[['Post Zone', 'Count']]
+
+print('processing all members details list')
+address_columns = ['Address Line 1', 'Address Line 2', 'City', 'County', 'Post Code', 'Country']
+current_member_details =\
+    accounts[isnull(accounts['Cancelled']) & accounts['Current Member']]\
+        .apply(lambda row: {
+            'Correspondence ' + key if key in address_columns else key:
+                NaN if key in address_columns and not row['Offsite'] else value
+            for (key, value)
+            in row.items()
+        }, axis=1, result_type='expand')\
+        .join(members)\
+        .reset_index('Membership Number')\
+        .set_index('Property Code')\
+        .join(
+            properties
+                .apply(
+                    lambda row: {
+                        'Flat Address Line 1': row['Address 1'],
+                        'Flat Address Line 2': row['Address 2'],
+                        'Flat City': 'London',
+                        'Flat Post Code': row['Post Code']},
+                    axis=1,
+                    result_type='expand'),
+            how='inner')\
+        .reset_index('Property Code')\
+        .sort_values(
+            ['Surname', 'First name', 'Middlename', 'Property Code'],
+            key=lambda col: [locale.strxfrm(x.lower()) if isinstance(x, str) else x for x in col]
+        )[['Title', 'First name', 'Middlename', 'Surname', 'Email', 'Telephone',
+            'Flat Address Line 1', 'Flat Address Line 2', 'Flat City',
+            'Flat Post Code',
+            'Correspondence Address Line 1', 'Correspondence Address Line 2',
+            'Correspondence City', 'Correspondence County',
+            'Correspondence Post Code', 'Correspondence Country']]
+
 
 if __name__ == '__main__':
     write_output_files()
