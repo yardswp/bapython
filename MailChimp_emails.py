@@ -1,3 +1,4 @@
+from pandas import DataFrame, notna, notnull
 from members import *
 
 

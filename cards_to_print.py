@@ -1,6 +1,7 @@
 import math
-import sys
-from typing import Callable, Dict
+from typing import Any, Callable, Dict
+
+from pandas import Series, isnull, notna
 
 from members import *
 from member_financials import *
@@ -37,7 +38,7 @@ def create_affordability_row(r):
     }
 
 
-def create_reprint_row_creator() -> Callable[[object], object]:
+def create_reprint_row_creator() -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     card_renewal_date = month_begin + offsets.MonthBegin() * 12
     card_end_date = card_renewal_date + offsets.MonthEnd()
     return lambda r: {

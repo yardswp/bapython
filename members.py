@@ -1,6 +1,7 @@
 import os
 from re import search
-from pandas import *
+from typing import Any
+from pandas import Timestamp, concat, isna, offsets, read_excel
 from numpy import NaN
 from dotenv import find_dotenv, load_dotenv
 
@@ -13,10 +14,10 @@ month_begin = Timestamp(day=NOW.day, month=NOW.month, year=NOW.year) - offsets.M
                 if NOW.day > 1\
                 else Timestamp(day=NOW.day, month=NOW.month, year=NOW.year)
 month_end = month_begin + offsets.MonthEnd()
-files_dir = os.getenv('BA_FILES_DIR')
+files_dir = os.getenv('BA_FILES_DIR', '')
 
 
-def trim_normalise_string(x: any):
+def trim_normalise_string(x: Any):
     if not isinstance(x, str):
         return x
 
@@ -161,45 +162,45 @@ members = all_members[
         if search('E mail|((Title|First name|Middlename|Surname|Telephone|E mail|Mailing List) \\d)$', col)
     ]]\
     .stack()\
-    .reset_index(1)\
+    .reset_index(level=1)\
     .rename(columns={
         'level_1': 'Field Name',
         0: 'Value'
     }).apply(
-    lambda row: {
-        'Field Name': row['Field Name'][0:len(row['Field Name']) - 2]
-        if row['Field Name'][-1].isdigit()
-        else row['Field Name'],
-        'Count': int(row['Field Name'][len(row['Field Name']) - 1])
-        if row['Field Name'][-1].isdigit()
-        else 1,
-        'Value': row['Value']
-    },
-    axis=1,
-    result_type='expand'
-).reset_index(names='Membership ID')\
+        lambda row: {
+            'Field Name': row['Field Name'][0:len(row['Field Name']) - 2]
+            if row['Field Name'][-1].isdigit()
+            else row['Field Name'],
+            'Count': int(row['Field Name'][len(row['Field Name']) - 1])
+            if row['Field Name'][-1].isdigit()
+            else 1,
+            'Value': row['Value']
+        },
+        axis=1,
+        result_type='expand'
+).reset_index(names=['Membership ID'])\
     .set_index(['Membership ID', 'Count', 'Field Name'])\
-    .unstack(level=2)\
-    .reset_index(level=1, col_level=1)
+    .unstack(level=2)
+members = members.reset_index(level=1, col_level=1) # type: ignore
 members.columns = members.columns.droplevel(0)
-members = members\
-    .applymap(trim_normalise_string)[
-        members['First name'].notna() | members['Middlename'].notna() | members['Surname'].notna()]
+members = members.applymap(trim_normalise_string)
+members = members[members['First name'].notna() | members['Middlename'].notna() | members['Surname'].notna()]
 members = concat(
-    [
-        members,
-        members.apply(
-            lambda row: {
-                'Formal Name': create_formal_name(row['Title'], row['First name'], row['Surname']),
-                'Informal Name': create_informal_name(row['Title'], row['First name'], row['Surname']),
-                'Full Name': create_full_name(row['Title'], row['First name'], row['Middlename'], row['Surname']),
-            },
-            axis=1,
-            result_type='expand'
-        )
-    ],
-    axis='columns'
-).rename(columns={'E mail': 'Email'})
+        [
+            members,
+            members.apply(
+                lambda row: {
+                    'Formal Name': create_formal_name(row['Title'], row['First name'], row['Surname']),
+                    'Informal Name': create_informal_name(row['Title'], row['First name'], row['Surname']),
+                    'Full Name': create_full_name(row['Title'], row['First name'], row['Middlename'], row['Surname']),
+                },
+                axis=1,
+                result_type='expand'
+            )
+        ],
+        axis='columns'
+    )\
+    .rename(columns={'E mail': 'Email'})
 
 
 print("loading issuance")

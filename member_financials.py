@@ -1,7 +1,7 @@
 import os
 from glob import glob
-from pandas import *
 from dotenv import find_dotenv, load_dotenv
+from pandas import DataFrame, ExcelWriter, Timestamp, concat, read_excel
 
 
 load_dotenv(find_dotenv())
@@ -9,7 +9,7 @@ load_dotenv(find_dotenv())
 
 def payments(file_name: str) -> DataFrame:
     print(f'loading {file_name}')
-    dir_name = os.getenv('BA_FILES_DIR')
+    dir_name = os.getenv('BA_FILES_DIR', '')
     return concat(
         [
             read_excel(full_name, 'Payments').set_index(['Membership ID', 'Date'])
@@ -36,7 +36,7 @@ print('processing balances')
 balances = payment_history\
     .reset_index(names=['Membership ID', 'Date'])\
     .groupby('Membership ID')\
-    .agg(**{'Balance': ('Amount', 'sum')})
+    .agg(Balance=('Amount', 'sum'))
 
 if __name__ == '__main__':
     write_member_financials()
