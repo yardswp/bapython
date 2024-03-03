@@ -122,8 +122,7 @@ normal_members = concat([
         result_type='expand'
     )],
     axis='columns')\
-    .drop(['Diff Address', 'Serial Number', 'Alt Address 4', 'Block Name', 'Barbican Address', 'Last Sub Paid',
-           'Card Issuance', 'Payment Type', 'BANK ACCOUNT', 'Offsite Address Line 1', 'Offsite Address Line 2',
+    .drop(['Diff Address', 'Serial Number', 'Alt Address 4', 'Offsite Address Line 1', 'Offsite Address Line 2',
            'Offsite City', 'Offsite Post Code', 'Onsite Address 1', 'Onsite Address 2', 'Onsite City',
            'Onsite Post Code', 'Block Code'],
           axis=1)\
@@ -231,7 +230,7 @@ accounts = all_members\
           .set_index('Membership ID')
           )[
         [
-            'Date first joined', 'Cancelled', 'Treasurere ref', 'Payment Type', 'Comment', 'Property Code', 'Old Code',
+            'Date first joined', 'Cancelled', 'Treasurere ref', 'Payment Type', 'Comment', 'Property Code',
             'Offsite', 'Post Zone', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Post Code', 'Country',
             'Associate', 'Informal Greeting', 'Addressee', 'Current Member'
         ]]

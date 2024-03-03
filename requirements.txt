@@ -1,7 +1,8 @@
-pandas
+bottleneck
+numba
+numexpr
 numpy
+openpyxl
+pandas
 python-dotenv
 XlsxWriter
-bottleneck
-numexpr
-numba
